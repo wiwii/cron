@@ -11,10 +11,12 @@ import (
 // specified by the schedule. It may be started, stopped, and the entries may
 // be inspected while running.
 type Cron struct {
+	id       int32
 	entries  []*Entry
 	stop     chan struct{}
 	add      chan *Entry
 	snapshot chan []*Entry
+	remove    chan int32
 	running  bool
 	ErrorLog *log.Logger
 	location *time.Location
@@ -47,6 +49,9 @@ type Entry struct {
 
 	// The Job to run.
 	Job Job
+
+	// entry id
+	Id int32
 }
 
 // byTime is a wrapper for sorting the entry array by time
@@ -76,10 +81,12 @@ func New() *Cron {
 // NewWithLocation returns a new Cron job runner.
 func NewWithLocation(location *time.Location) *Cron {
 	return &Cron{
+		id:       0,
 		entries:  nil,
 		add:      make(chan *Entry),
 		stop:     make(chan struct{}),
 		snapshot: make(chan []*Entry),
+		remove:   make(chan int32),
 		running:  false,
 		ErrorLog: nil,
 		location: location,
@@ -113,6 +120,7 @@ func (c *Cron) Schedule(schedule Schedule, cmd Job) {
 		Job:      cmd,
 	}
 	if !c.running {
+		entry.Id = c.nextId()
 		c.entries = append(c.entries, entry)
 		return
 	}
@@ -205,11 +213,34 @@ func (c *Cron) run() {
 				timer.Stop()
 				now = c.now()
 				newEntry.Next = newEntry.Schedule.Next(now)
+				newEntry.Id = c.nextId()
 				c.entries = append(c.entries, newEntry)
 
 			case <-c.snapshot:
 				c.snapshot <- c.entrySnapshot()
 				continue
+
+			case targetId := <-c.remove:
+				timer.Stop()
+				if len(c.entries) <= 0 {
+					continue
+				}
+
+				if targetId >= 0 {
+					newEntrys := []*Entry{}
+					for _,v := range c.entries {
+						if targetId != v.Id {
+							newEntrys = append(newEntrys, v)
+						}
+					}
+					c.entries = newEntrys
+				} else if -1 == targetId {
+					c.entries = []*Entry{}
+				} else if -2 == targetId {
+					c.entries = c.entries[1:]
+				} else if -3 == targetId {
+					c.entries = c.entries[:len(c.entries)-1]
+				}
 
 			case <-c.stop:
 				timer.Stop()
@@ -239,6 +270,66 @@ func (c *Cron) Stop() {
 	c.running = false
 }
 
+// remove all jobs
+func (c *Cron) RemoveAll() {
+	if !c.running {
+		c.entries = []*Entry{}
+		return
+	}
+
+	c.remove <- -1
+}
+
+// remove spec id
+func (c *Cron) Remove(id int32) {
+	if !c.running {
+		if len(c.entries) <= 0 {
+			return
+		}
+
+		newEntrys := []*Entry{}
+		if id >= 0 {
+			for _,v := range c.entries {
+				if id != v.Id {
+					newEntrys = append(newEntrys, v)
+				}
+			}
+		}
+		c.entries = newEntrys
+		return
+	}
+
+	c.remove <- id
+}
+
+// remove top
+func (c *Cron) RemoveFirst() {
+	if !c.running {
+		if len(c.entries) <= 0 {
+			return
+		}
+
+		c.entries = c.entries[1:]
+		return
+	}
+
+	c.remove <- -2
+}
+
+// remove top
+func (c *Cron) RemoveLast() {
+	if !c.running {
+		if len(c.entries) <= 0 {
+			return
+		}
+
+		c.entries = c.entries[:len(c.entries)-1]
+		return
+	}
+
+	c.remove <- -3
+}
+
 // entrySnapshot returns a copy of the current cron entry list.
 func (c *Cron) entrySnapshot() []*Entry {
 	entries := []*Entry{}
@@ -248,6 +339,7 @@ func (c *Cron) entrySnapshot() []*Entry {
 			Next:     e.Next,
 			Prev:     e.Prev,
 			Job:      e.Job,
+			Id:       e.Id,
 		})
 	}
 	return entries
@@ -256,4 +348,10 @@ func (c *Cron) entrySnapshot() []*Entry {
 // now returns current time in c location
 func (c *Cron) now() time.Time {
 	return time.Now().In(c.location)
+}
+
+func (c *Cron) nextId() int32 {
+	oid := c.id
+	c.id = c.id + 1
+	return oid
 }
