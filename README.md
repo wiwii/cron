@@ -1,4 +1,9 @@
-[![GoDoc](http://godoc.org/github.com/robfig/cron?status.png)](http://godoc.org/github.com/robfig/cron) 
-[![Build Status](https://travis-ci.org/robfig/cron.svg?branch=master)](https://travis-ci.org/robfig/cron)
+Base on github.com/robfig/cron
+added some helpful api:
 
-add clear job api
+Remove(id int32)
+RemoveAll()
+RemoveFirst()
+RemoveLast()
+
+id is From cron.Entity,you can see it in Entries()
