@@ -58,6 +58,12 @@ type Entry struct {
 
 	// tag for running
 	Tag string
+
+	//
+	Task string
+
+	// 
+	Params string
 }
 
 // byTime is a wrapper for sorting the entry array by time
@@ -119,6 +125,14 @@ func (c *Cron) AddFunc4(spec string, cmd func(...interface{}), n int32, tag stri
 	return c.AddJob(spec, FuncJob(cmd), n, tag)
 }
 
+func (c *Cron) AddFunc5(spec string, cmd func(...interface{}), n int32, tag string, task string) error {
+	return c.AddJob(spec, FuncJob(cmd), n, tag, task)
+}
+
+func (c *Cron) AddFunc6(spec string, cmd func(...interface{}), n int32, tag string, task string, params string) error {
+	return c.AddJob(spec, FuncJob(cmd), n, tag, task, params)
+}
+
 // AddJob adds a Job to the Cron to be run on the given schedule.
 func (c *Cron) AddJob(spec string, cmd Job, extArgs ...interface{}) error {
 	schedule, err := Parse(spec)
@@ -142,6 +156,15 @@ func (c *Cron) Schedule(schedule Schedule, cmd Job, extArgs ...interface{}) {
 	case 2:
 		entry.ArgLen = extArgsInner[0].(int32)
 		entry.Tag = extArgsInner[1].(string)
+	case 3:
+		entry.ArgLen = extArgsInner[0].(int32)
+		entry.Tag = extArgsInner[1].(string)
+		entry.Task = extArgsInner[2].(string)
+	case 4:
+		entry.ArgLen = extArgsInner[0].(int32)
+		entry.Tag = extArgsInner[1].(string)
+		entry.Task = extArgsInner[2].(string)
+		entry.Params = extArgsInner[3].(string)	
 	}
 
 	if !c.running {
@@ -236,6 +259,10 @@ func (c *Cron) run() {
 						go c.runWithRecovery(e.Job, e.Id)
 					case 2:
 						go c.runWithRecovery(e.Job, e.Id, e.Tag)
+					case 3:
+						go c.runWithRecovery(e.Job, e.Id, e.Tag, e.Task)
+					case 4:
+						go c.runWithRecovery(e.Job, e.Id, e.Tag, e.Task, e.Params)
 					}
 					
 					e.Prev = e.Next
